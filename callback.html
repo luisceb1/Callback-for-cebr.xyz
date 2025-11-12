@@ -395,6 +395,44 @@
             hashParamsCount: Object.keys(hashParams).length
         });
 
+        // ESPERAR A QUE SUPABASE REDIRIJA CON TOKENS
+        // Si llegamos aquí sin tokens pero venimos de Supabase verify, esperar
+        if (!access_token && !refresh_token && !error && window.location.search.includes('token')) {
+            log('⏳ Esperando redirección de Supabase con tokens...');
+            // Esperar hasta 5 segundos a que lleguen los tokens
+            let waitCount = 0;
+            const waitInterval = setInterval(() => {
+                waitCount++;
+                const newHashParams = parseHashFragment();
+                if (newHashParams.access_token && newHashParams.refresh_token) {
+                    clearInterval(waitInterval);
+                    log('✅ Tokens recibidos después de espera');
+                    access_token = newHashParams.access_token;
+                    refresh_token = newHashParams.refresh_token;
+                    type = 'recovery';
+                    showPasswordResetForm();
+                } else if (waitCount >= 10) {
+                    clearInterval(waitInterval);
+                    log('❌ Tokens no recibidos después de espera');
+                    document.body.innerHTML = `
+                        <div class="container">
+                            <h1>⚠️ Problema de Redirección</h1>
+                            <p>Supabase no está enviando los tokens correctamente.</p>
+                            <p style="font-size: 0.9rem; margin-top: 1rem;">
+                                <strong>Verifica en Supabase Dashboard:</strong><br>
+                                1. Authentication → URL Configuration<br>
+                                2. Redirect URLs debe incluir:<br>
+                                <code style="background: rgba(0,0,0,0.3); padding: 0.5rem; display: block; margin-top: 0.5rem;">
+                                    https://luisceb1.github.io/Callback-for-cebr.xyz/callback.html
+                                </code>
+                            </p>
+                            ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                        </div>
+                    `;
+                }
+            }, 500);
+        }
+
         // SI HAY TOKENS, ES RECOVERY - MOSTRAR FORMULARIO INMEDIATAMENTE
         if (access_token && refresh_token && !error) {
             log('🔐 TOKENS DETECTADOS - Mostrando formulario de cambio de contraseña');
