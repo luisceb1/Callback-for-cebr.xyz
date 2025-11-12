@@ -303,9 +303,22 @@
 
         // Mostrar debug info inmediatamente si está activo
         if (DEBUG_MODE) {
-            document.getElementById('debugInfo').innerHTML = logs.join('<br>');
-            document.getElementById('debugInfo').style.display = 'block';
+            const debugEl = document.getElementById('debugInfo');
+            if (debugEl) {
+                debugEl.innerHTML = logs.join('<br>');
+                debugEl.style.display = 'block';
+            }
         }
+
+        // Log inicial para ver qué está pasando
+        console.log('🔍 Estado inicial:', {
+            isRecovery,
+            hasAccessToken: !!access_token,
+            hasRefreshToken: !!refresh_token,
+            type,
+            hashLength: window.location.hash ? window.location.hash.length : 0,
+            hashParamsCount: Object.keys(hashParams).length
+        });
 
         if (isRecovery) {
             log('🔐 Mostrando formulario de cambio de contraseña');
@@ -414,8 +427,20 @@
                 // porque Supabase puede estar redirigiendo
                 if (window.location.hash && window.location.hash.length > 10) {
                     log('⏳ Hash fragment detectado, esperando procesamiento...');
+
+                    // Mostrar debug inmediatamente
+                    if (DEBUG_MODE) {
+                        const debugEl = document.getElementById('debugInfo');
+                        if (debugEl) {
+                            debugEl.innerHTML = logs.join('<br>');
+                            debugEl.style.display = 'block';
+                        }
+                    }
+
                     setTimeout(() => {
                         const hashParamsAfter = parseHashFragment();
+                        log('🔍 Hash params después de espera:', Object.keys(hashParamsAfter));
+
                         if (hashParamsAfter.access_token && hashParamsAfter.refresh_token) {
                             log('✅ Tokens recibidos después de espera');
                             access_token = hashParamsAfter.access_token;
@@ -424,12 +449,16 @@
                             showPasswordResetForm();
                         } else {
                             // Mostrar debug info y redirigir
-                            log('⚠️ No se detectó recovery, redirigiendo a app');
+                            log('⚠️ No se detectó recovery, mostrando debug y redirigiendo a app');
                             showDebugInfo();
                             redirectToApp();
                         }
-                    }, 1000);
+                    }, 2000);
                 } else {
+                    // Mostrar debug antes de redirigir
+                    if (DEBUG_MODE) {
+                        showDebugInfo();
+                    }
                     // Ejecutar redirección inmediatamente para OAuth
                     redirectToApp();
                 }
@@ -438,23 +467,47 @@
 
         // Función para mostrar información de debug
         function showDebugInfo() {
-            const debugDiv = document.createElement('div');
-            debugDiv.className = 'debug-info';
-            debugDiv.style.display = 'block';
-            debugDiv.style.marginTop = '1rem';
-            debugDiv.innerHTML = `
-                <strong>Debug Info:</strong><br>
-                URL: ${window.location.href.substring(0, 200)}...<br>
-                Hash: ${window.location.hash || 'vacío'}<br>
-                Search: ${window.location.search || 'vacío'}<br>
-                Type: ${type || 'no detectado'}<br>
-                Access Token: ${access_token ? 'presente (' + access_token.length + ' chars)' : 'ausente'}<br>
-                Refresh Token: ${refresh_token ? 'presente (' + refresh_token.length + ' chars)' : 'ausente'}<br>
-                Hash Params: ${Object.keys(hashParams).join(', ') || 'ninguno'}<br>
-                Is Recovery: ${isRecovery}<br>
-                ${logs.join('<br>')}
-            `;
-            document.querySelector('.container').appendChild(debugDiv);
+            // Intentar usar el elemento existente primero
+            let debugEl = document.getElementById('debugInfo');
+
+            if (!debugEl) {
+                // Si no existe, crear uno nuevo
+                debugEl = document.createElement('div');
+                debugEl.id = 'debugInfo';
+                debugEl.className = 'debug-info';
+                const container = document.querySelector('.container');
+                if (container) {
+                    container.appendChild(debugEl);
+                } else {
+                    // Si no hay container, crear uno
+                    document.body.innerHTML = `
+                        <div class="container">
+                            <h1>🔍 Debug Info</h1>
+                            <div id="debugInfo" class="debug-info"></div>
+                        </div>
+                    `;
+                    debugEl = document.getElementById('debugInfo');
+                }
+            }
+
+            if (debugEl) {
+                debugEl.innerHTML = `
+                    <strong>🔍 Debug Info:</strong><br>
+                    <strong>URL completa:</strong> ${window.location.href}<br>
+                    <strong>Hash:</strong> ${window.location.hash || 'vacío'}<br>
+                    <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
+                    <strong>Type:</strong> ${type || 'no detectado'}<br>
+                    <strong>Access Token:</strong> ${access_token ? 'presente (' + access_token.length + ' chars)' : 'ausente'}<br>
+                    <strong>Refresh Token:</strong> ${refresh_token ? 'presente (' + refresh_token.length + ' chars)' : 'ausente'}<br>
+                    <strong>Hash Params Keys:</strong> ${Object.keys(hashParams).join(', ') || 'ninguno'}<br>
+                    <strong>Is Recovery:</strong> ${isRecovery}<br>
+                    <strong>Error:</strong> ${error || 'ninguno'}<br>
+                    <hr>
+                    <strong>Logs:</strong><br>
+                    ${logs.join('<br>')}
+                `;
+                debugEl.style.display = 'block';
+            }
         }
 
         // Función para mostrar formulario de cambio de contraseña
