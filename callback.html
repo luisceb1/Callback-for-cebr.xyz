@@ -87,10 +87,30 @@
         <h1>Autenticación exitosa</h1>
         <p>Redirigiendo a la aplicación...</p>
         <div class="provider-info" id="providerInfo"></div>
-        <div class="debug-info" id="debugInfo" style="display: none;"></div>
+        <div class="debug-info" id="debugInfo"
+            style="display: block !important; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 1rem; margin-top: 1rem; border-radius: 8px; font-size: 0.7rem; max-height: 500px; overflow-y: auto; border: 3px solid #00ff00; font-family: monospace;">
+            <strong style="color: yellow; font-size: 1rem;">🔍 DEBUG ACTIVO - Cargando información...</strong>
+        </div>
     </div>
 
     <script>
+        // Mostrar información INMEDIATAMENTE al cargar
+        (function () {
+            const debugEl = document.getElementById('debugInfo');
+            if (debugEl) {
+                debugEl.innerHTML = `
+                    <strong>🔍 Información Inmediata (al cargar):</strong><br>
+                    <strong>URL completa:</strong> ${window.location.href}<br>
+                    <strong>Hash:</strong> ${window.location.hash || 'vacío'}<br>
+                    <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
+                    <strong>Host:</strong> ${window.location.host}<br>
+                    <strong>Pathname:</strong> ${window.location.pathname}<br>
+                    <hr>
+                    <strong>Esperando procesamiento...</strong>
+                `;
+            }
+        })();
+
         console.log('🔐 Página de callback cargada');
         console.log('📍 URL actual:', window.location.href);
 
@@ -316,7 +336,16 @@
 
         // Mostrar debug info inmediatamente si está activo
         if (DEBUG_MODE) {
+            // Mostrar inmediatamente
             showDebugInfo();
+            // Actualizar cada segundo para capturar cambios en el hash
+            const debugInterval = setInterval(() => {
+                showDebugInfo();
+            }, 1000);
+            // Limpiar después de 30 segundos
+            setTimeout(() => {
+                clearInterval(debugInterval);
+            }, 30000);
         }
 
         // Log inicial para ver qué está pasando
@@ -500,20 +529,30 @@
             }
 
             if (debugEl) {
+                // Re-parsear hash por si cambió
+                const currentHashParams = parseHashFragment();
+                const currentAccessToken = currentHashParams.access_token || access_token;
+                const currentRefreshToken = currentHashParams.refresh_token || refresh_token;
+                const currentType = currentHashParams.type || type;
+
                 debugEl.innerHTML = `
-                    <strong>🔍 Debug Info:</strong><br>
-                    <strong>URL completa:</strong> ${window.location.href}<br>
-                    <strong>Hash:</strong> ${window.location.hash || 'vacío'}<br>
+                    <strong>🔍 Debug Info (Actualizado: ${new Date().toLocaleTimeString()}):</strong><br>
+                    <strong>URL completa:</strong> ${window.location.href.substring(0, 200)}${window.location.href.length > 200 ? '...' : ''}<br>
+                    <strong>Hash:</strong> ${window.location.hash ? window.location.hash.substring(0, 150) + '...' : 'vacío'}<br>
                     <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
-                    <strong>Type:</strong> ${type || 'no detectado'}<br>
-                    <strong>Access Token:</strong> ${access_token ? 'presente (' + access_token.length + ' chars)' : 'ausente'}<br>
-                    <strong>Refresh Token:</strong> ${refresh_token ? 'presente (' + refresh_token.length + ' chars)' : 'ausente'}<br>
-                    <strong>Hash Params Keys:</strong> ${Object.keys(hashParams).join(', ') || 'ninguno'}<br>
-                    <strong>Is Recovery:</strong> ${isRecovery}<br>
+                    <strong>Host:</strong> ${window.location.host}<br>
+                    <strong>Pathname:</strong> ${window.location.pathname}<br>
+                    <hr>
+                    <strong>Type:</strong> ${currentType || 'no detectado'}<br>
+                    <strong>Access Token:</strong> ${currentAccessToken ? '✅ presente (' + currentAccessToken.length + ' chars)' : '❌ ausente'}<br>
+                    <strong>Refresh Token:</strong> ${currentRefreshToken ? '✅ presente (' + currentRefreshToken.length + ' chars)' : '❌ ausente'}<br>
+                    <strong>Hash Params Keys:</strong> ${Object.keys(currentHashParams).join(', ') || 'ninguno'}<br>
+                    <strong>Is Recovery:</strong> ${isRecovery ? '✅ SÍ' : '❌ NO'}<br>
                     <strong>Error:</strong> ${error || 'ninguno'}<br>
                     <hr>
-                    <strong>Logs:</strong><br>
-                    ${logs.join('<br>')}
+                    <strong>Logs (${logs.length} entradas):</strong><br>
+                    ${logs.slice(-10).join('<br>')}
+                    ${logs.length > 10 ? '<br>... (mostrando últimos 10)' : ''}
                 `;
                 debugEl.style.display = 'block';
             }
