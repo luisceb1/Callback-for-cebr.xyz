@@ -241,6 +241,19 @@
         function redirectToApp() {
             log('🚀 Intentando redirigir a la app...');
 
+            // SIEMPRE mostrar debug antes de redirigir
+            if (DEBUG_MODE) {
+                showDebugInfo();
+                // Esperar 3 segundos para que el usuario pueda ver el debug
+                setTimeout(() => {
+                    doRedirect();
+                }, 3000);
+            } else {
+                doRedirect();
+            }
+        }
+
+        function doRedirect() {
             // Construir URL manualmente (URL constructor no funciona bien con custom schemes)
             const params = [];
             if (access_token) params.push(`access_token=${encodeURIComponent(access_token)}`);
@@ -303,11 +316,7 @@
 
         // Mostrar debug info inmediatamente si está activo
         if (DEBUG_MODE) {
-            const debugEl = document.getElementById('debugInfo');
-            if (debugEl) {
-                debugEl.innerHTML = logs.join('<br>');
-                debugEl.style.display = 'block';
-            }
+            showDebugInfo();
         }
 
         // Log inicial para ver qué está pasando
