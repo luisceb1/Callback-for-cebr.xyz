@@ -103,13 +103,32 @@
         // Mostrar información INMEDIATAMENTE al cargar - SIN DEPENDER DE FUNCIONES
         (function () {
             try {
-                document.getElementById('debugUrl').textContent = window.location.href.substring(0, 150);
-                document.getElementById('debugHash').textContent = window.location.hash ? window.location.hash.substring(0, 100) + '...' : 'VACÍO';
-                document.getElementById('debugSearch').textContent = window.location.search || 'VACÍO';
-                document.getElementById('debugTokens').textContent = 'Verificando...';
-                document.getElementById('debugType').textContent = 'Verificando...';
+                const url = window.location.href;
+                const hash = window.location.hash;
+                const search = window.location.search;
+
+                document.getElementById('debugUrl').textContent = url.substring(0, 150) + (url.length > 150 ? '...' : '');
+                document.getElementById('debugHash').textContent = hash ? hash.substring(0, 100) + (hash.length > 100 ? '...' : '') : 'VACÍO';
+                document.getElementById('debugSearch').textContent = search || 'VACÍO';
+
+                // Verificar si hay tokens en el hash INMEDIATAMENTE
+                if (hash) {
+                    const hashMatch = hash.match(/access_token=([^&]+)/);
+                    const refreshMatch = hash.match(/refresh_token=([^&]+)/);
+                    if (hashMatch && refreshMatch) {
+                        document.getElementById('debugTokens').textContent = '✅ TOKENS ENCONTRADOS EN HASH';
+                        document.getElementById('debugType').textContent = 'recovery';
+                    } else {
+                        document.getElementById('debugTokens').textContent = '❌ NO HAY TOKENS EN HASH';
+                        document.getElementById('debugType').textContent = 'verificando...';
+                    }
+                } else {
+                    document.getElementById('debugTokens').textContent = '❌ HASH VACÍO - Esperando tokens...';
+                    document.getElementById('debugType').textContent = 'esperando...';
+                }
             } catch (e) {
                 console.error('Error inicial debug:', e);
+                document.getElementById('debugTokens').textContent = 'ERROR: ' + e.message;
             }
         })();
 
