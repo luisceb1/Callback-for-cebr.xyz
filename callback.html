@@ -415,39 +415,68 @@
         });
 
         // ESPERAR A QUE SUPABASE REDIRIJA CON TOKENS
-        // Si llegamos aquí sin tokens pero venimos de Supabase verify, esperar
-        if (!access_token && !refresh_token && !error && window.location.search.includes('token')) {
-            log('⏳ Esperando redirección de Supabase con tokens...');
-            // Esperar hasta 5 segundos a que lleguen los tokens
+        // Si llegamos aquí sin tokens, esperar a que Supabase los envíe
+        if (!access_token && !refresh_token && !error) {
+            log('⏳ NO HAY TOKENS - Esperando redirección de Supabase...');
+            log('📍 URL actual:', window.location.href);
+            log('📍 Hash:', window.location.hash || 'VACÍO');
+            log('📍 Search:', window.location.search || 'VACÍO');
+
+            // Esperar hasta 10 segundos a que lleguen los tokens
             let waitCount = 0;
             const waitInterval = setInterval(() => {
                 waitCount++;
                 const newHashParams = parseHashFragment();
+                const newHash = window.location.hash;
+
+                // Actualizar debug
+                if (document.getElementById('debugHash')) {
+                    document.getElementById('debugHash').textContent = newHash ? newHash.substring(0, 100) + (newHash.length > 100 ? '...' : '') : 'VACÍO';
+                }
+
                 if (newHashParams.access_token && newHashParams.refresh_token) {
                     clearInterval(waitInterval);
                     log('✅ Tokens recibidos después de espera');
                     access_token = newHashParams.access_token;
                     refresh_token = newHashParams.refresh_token;
                     type = 'recovery';
+                    if (document.getElementById('debugTokens')) {
+                        document.getElementById('debugTokens').textContent = '✅ TOKENS RECIBIDOS';
+                    }
                     showPasswordResetForm();
-                } else if (waitCount >= 10) {
+                } else if (waitCount >= 20) {
                     clearInterval(waitInterval);
-                    log('❌ Tokens no recibidos después de espera');
-                    document.body.innerHTML = `
+                    log('❌ Tokens NO recibidos después de 10 segundos');
+
+                    // Mostrar mensaje claro del problema
+                    const problemMessage = `
                         <div class="container">
-                            <h1>⚠️ Problema de Redirección</h1>
-                            <p>Supabase no está enviando los tokens correctamente.</p>
-                            <p style="font-size: 0.9rem; margin-top: 1rem;">
-                                <strong>Verifica en Supabase Dashboard:</strong><br>
-                                1. Authentication → URL Configuration<br>
-                                2. Redirect URLs debe incluir:<br>
-                                <code style="background: rgba(0,0,0,0.3); padding: 0.5rem; display: block; margin-top: 0.5rem;">
-                                    https://luisceb1.github.io/Callback-for-cebr.xyz/callback.html
-                                </code>
+                            <h1>⚠️ Problema: Tokens No Recibidos</h1>
+                            <p style="margin-bottom: 1rem;">Supabase está redirigiendo a esta página pero <strong>NO está enviando los tokens</strong> en el hash fragment.</p>
+
+                            <div style="background: rgba(255,0,0,0.2); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                                <strong>Posibles causas:</strong><br>
+                                1. La URL en Supabase Redirect URLs no coincide exactamente<br>
+                                2. Supabase tiene problemas redirigiendo a GitHub Pages<br>
+                                3. Hay un problema de configuración en Supabase Dashboard
+                            </div>
+
+                            <div style="background: rgba(0,255,0,0.2); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                                <strong>✅ Solución:</strong><br>
+                                Usa una URL de tu dominio <code>cebr.xyz</code> en lugar de GitHub Pages.<br>
+                                O verifica que la URL en Supabase sea EXACTAMENTE igual (sin espacios, sin barra final).
+                            </div>
+
+                            <p style="font-size: 0.8rem; margin-top: 1rem; opacity: 0.7;">
+                                URL actual: ${window.location.href}<br>
+                                Hash: ${window.location.hash || 'VACÍO'}<br>
+                                Search: ${window.location.search || 'VACÍO'}
                             </p>
-                            ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+
+                            ${DEBUG_MODE ? `<div class="debug-info" style="margin-top: 1rem;">${logs.join('<br>')}</div>` : ''}
                         </div>
                     `;
+                    document.body.innerHTML = problemMessage;
                 }
             }, 500);
         }
