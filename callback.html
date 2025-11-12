@@ -88,26 +88,28 @@
         <p>Redirigiendo a la aplicación...</p>
         <div class="provider-info" id="providerInfo"></div>
         <div class="debug-info" id="debugInfo"
-            style="display: block !important; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 1rem; margin-top: 1rem; border-radius: 8px; font-size: 0.7rem; max-height: 500px; overflow-y: auto; border: 3px solid #00ff00; font-family: monospace;">
-            <strong style="color: yellow; font-size: 1rem;">🔍 DEBUG ACTIVO - Cargando información...</strong>
+            style="display: block !important; background: rgba(0, 0, 0, 0.9); color: #00ff00; padding: 1rem; margin-top: 1rem; border-radius: 8px; font-size: 0.65rem; max-height: 500px; overflow-y: auto; border: 3px solid #00ff00; font-family: monospace; position: relative; z-index: 9999;">
+            <strong style="color: yellow; font-size: 1rem;">🔍 DEBUG ACTIVO</strong><br>
+            <strong>URL:</strong> <span id="debugUrl">Cargando...</span><br>
+            <strong>Hash:</strong> <span id="debugHash">Cargando...</span><br>
+            <strong>Search:</strong> <span id="debugSearch">Cargando...</span><br>
+            <strong>Tokens:</strong> <span id="debugTokens">Cargando...</span><br>
+            <strong>Type:</strong> <span id="debugType">Cargando...</span><br>
+            <div id="debugDetails" style="margin-top: 0.5rem; font-size: 0.6rem;"></div>
         </div>
     </div>
 
     <script>
-        // Mostrar información INMEDIATAMENTE al cargar
+        // Mostrar información INMEDIATAMENTE al cargar - SIN DEPENDER DE FUNCIONES
         (function () {
-            const debugEl = document.getElementById('debugInfo');
-            if (debugEl) {
-                debugEl.innerHTML = `
-                    <strong>🔍 Información Inmediata (al cargar):</strong><br>
-                    <strong>URL completa:</strong> ${window.location.href}<br>
-                    <strong>Hash:</strong> ${window.location.hash || 'vacío'}<br>
-                    <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
-                    <strong>Host:</strong> ${window.location.host}<br>
-                    <strong>Pathname:</strong> ${window.location.pathname}<br>
-                    <hr>
-                    <strong>Esperando procesamiento...</strong>
-                `;
+            try {
+                document.getElementById('debugUrl').textContent = window.location.href.substring(0, 150);
+                document.getElementById('debugHash').textContent = window.location.hash ? window.location.hash.substring(0, 100) + '...' : 'VACÍO';
+                document.getElementById('debugSearch').textContent = window.location.search || 'VACÍO';
+                document.getElementById('debugTokens').textContent = 'Verificando...';
+                document.getElementById('debugType').textContent = 'Verificando...';
+            } catch (e) {
+                console.error('Error inicial debug:', e);
             }
         })();
 
@@ -322,6 +324,13 @@
         // IMPORTANTE: Solo es recovery si hay tokens válidos, no solo type=recovery
         const isRecovery = (type === 'recovery' || hashParams.access_token) && access_token && refresh_token && !error;
 
+        // FORZAR recovery si hay tokens aunque no tenga type
+        if (!isRecovery && access_token && refresh_token && !error && !type) {
+            type = 'recovery';
+            const forcedRecovery = true;
+            log('🔐 FORZANDO recovery porque hay tokens sin type');
+        }
+
         // Debug: mostrar información completa
         log('🔍 Estado completo:', {
             url: window.location.href,
@@ -334,18 +343,46 @@
             isRecovery: isRecovery
         });
 
-        // Mostrar debug info inmediatamente si está activo
+        // Actualizar debug INMEDIATAMENTE y continuamente
+        function updateDebugNow() {
+            try {
+                const hash = window.location.hash;
+                const search = window.location.search;
+                const hashParams = parseHashFragment();
+                const hasAccessToken = !!(hashParams.access_token || urlParams.get('access_token'));
+                const hasRefreshToken = !!(hashParams.refresh_token || urlParams.get('refresh_token'));
+
+                document.getElementById('debugUrl').textContent = window.location.href.substring(0, 150) + (window.location.href.length > 150 ? '...' : '');
+                document.getElementById('debugHash').textContent = hash ? hash.substring(0, 100) + (hash.length > 100 ? '...' : '') : 'VACÍO';
+                document.getElementById('debugSearch').textContent = search || 'VACÍO';
+                document.getElementById('debugTokens').textContent = hasAccessToken && hasRefreshToken ? '✅ PRESENTES' : '❌ AUSENTES';
+                document.getElementById('debugType').textContent = type || hashParams.type || 'no detectado';
+
+                const details = `
+                    Hash Keys: ${Object.keys(hashParams).join(', ') || 'ninguno'}<br>
+                    Access Token: ${hasAccessToken ? '✅' : '❌'}<br>
+                    Refresh Token: ${hasRefreshToken ? '✅' : '❌'}<br>
+                    Is Recovery: ${isRecovery ? '✅ SÍ' : '❌ NO'}<br>
+                    Error: ${error || 'ninguno'}
+                `;
+                document.getElementById('debugDetails').innerHTML = details;
+            } catch (e) {
+                document.getElementById('debugDetails').innerHTML = 'Error: ' + e.message;
+            }
+        }
+
+        // Actualizar inmediatamente
+        updateDebugNow();
+
+        // Actualizar cada 500ms
+        const debugInterval = setInterval(updateDebugNow, 500);
+
+        // También llamar a showDebugInfo para logs completos
         if (DEBUG_MODE) {
-            // Mostrar inmediatamente
             showDebugInfo();
-            // Actualizar cada segundo para capturar cambios en el hash
-            const debugInterval = setInterval(() => {
+            setTimeout(() => {
                 showDebugInfo();
             }, 1000);
-            // Limpiar después de 30 segundos
-            setTimeout(() => {
-                clearInterval(debugInterval);
-            }, 30000);
         }
 
         // Log inicial para ver qué está pasando
@@ -357,6 +394,18 @@
             hashLength: window.location.hash ? window.location.hash.length : 0,
             hashParamsCount: Object.keys(hashParams).length
         });
+
+        // SI HAY TOKENS, ES RECOVERY - MOSTRAR FORMULARIO INMEDIATAMENTE
+        if (access_token && refresh_token && !error) {
+            log('🔐 TOKENS DETECTADOS - Mostrando formulario de cambio de contraseña');
+            log('📋 Tokens detectados:', {
+                hasAccessToken: !!access_token,
+                hasRefreshToken: !!refresh_token,
+                type: type || 'detectado automáticamente'
+            });
+            showPasswordResetForm();
+            return; // SALIR - NO HACER NADA MÁS
+        }
 
         if (isRecovery) {
             log('🔐 Mostrando formulario de cambio de contraseña');
