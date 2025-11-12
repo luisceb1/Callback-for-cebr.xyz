@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autenticación exitosa</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h1 {
+            margin: 0 0 1rem 0;
+            font-size: 1.5rem;
+        }
+        p {
+            margin: 0;
+            opacity: 0.9;
+        }
+        .provider-info {
+            margin-top: 1rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        .debug-info {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h1>Autenticación exitosa</h1>
+        <p>Redirigiendo a la aplicación...</p>
+        <div class="provider-info" id="providerInfo"></div>
+        <div class="debug-info" id="debugInfo" style="display: none;"></div>
+    </div>
+
+    <script>
+        console.log('🔐 Página de callback cargada');
+        console.log('📍 URL actual:', window.location.href);
+
+        // Configuración
+        const DEBUG_MODE = new URLSearchParams(window.location.search).get('debug') === 'true';
+        const TIMEOUT_MS = 15000; // 15 segundos
+        const APP_URL = 'calculadorapenas://auth/callback';
+
+        // Función para extraer parámetros del hash fragment (usado por Supabase para recovery)
+        function parseHashFragment() {
+            let hash = window.location.hash.substring(1); // Remover el primer #
+            if (!hash) return {};
+
+            // Manejar casos donde hay múltiples # (formato incorrecto pero común)
+            // Ejemplo: #type=recovery#access_token=xxx -> convertir a type=recovery&access_token=xxx
+            // Reemplazar todos los # restantes con &
+            hash = hash.replace(/#/g, '&');
+
+            const params = {};
+            const parts = hash.split('&');
+
+            parts.forEach(param => {
+                if (!param || param.trim() === '') return; // Saltar strings vacíos
+                const equalIndex = param.indexOf('=');
+                if (equalIndex > 0) {
+                    const key = param.substring(0, equalIndex).trim();
+                    const value = param.substring(equalIndex + 1).trim();
+                    if (key && value) {
+                        try {
+                            params[key] = decodeURIComponent(value);
+                        } catch (e) {
+                            // Si falla el decode, usar el valor original
+                            params[key] = value;
+                        }
+                    }
+                }
+            });
+
+            console.log('🔍 Hash parseado:', { hashOriginal: window.location.hash, hashProcessed: hash, params: Object.keys(params) });
+            return params;
+        }
+
+        // Obtener parámetros de la URL (query params)
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        let access_token = urlParams.get('access_token');
+        let refresh_token = urlParams.get('refresh_token');
+        const error = urlParams.get('error');
+        const error_description = urlParams.get('error_description');
+        const provider = urlParams.get('provider') || 'google';
+        let type = urlParams.get('type'); // OAuth o recovery
+
+        // Si hay hash fragment (usado por Supabase para recovery), extraer parámetros de ahí
+        const hashParams = parseHashFragment();
+        const hashParamsKeys = Object.keys(hashParams);
+        log('🔍 Hash params parseados:', hashParamsKeys);
+        log('🔍 Hash params valores:', hashParamsKeys.length > 0 ? hashParamsKeys.map(k => `${k}=${hashParams[k] ? hashParams[k].substring(0, 20) + '...' : 'null'}`).join(', ') : 'ninguno');
+
+        // Extraer tokens del hash fragment (prioridad sobre query params)
+        if (hashParams.access_token) {
+            access_token = hashParams.access_token;
+            log('✅ Access token encontrado en hash fragment (longitud: ' + access_token.length + ')');
+        } else {
+            log('❌ Access token NO encontrado en hash fragment');
+        }
+        if (hashParams.refresh_token) {
+            refresh_token = hashParams.refresh_token;
+            log('✅ Refresh token encontrado en hash fragment (longitud: ' + refresh_token.length + ')');
+        } else {
+            log('❌ Refresh token NO encontrado en hash fragment');
+        }
+        if (hashParams.type) {
+            type = hashParams.type;
+            log('📋 Type encontrado en hash fragment:', type);
+        }
+
+        // Si hay tokens en hash fragment pero no type, es recovery
+        if (!type && (hashParams.access_token || hashParams.refresh_token)) {
+            type = 'recovery';
+            log('🔐 Recovery detectado automáticamente (tokens en hash fragment)');
+        }
+
+        if (hashParams.error) {
+            const hashError = hashParams.error;
+            const hashErrorDesc = hashParams.error_description || '';
+            const hashErrorCode = hashParams.error_code || '';
+            log('❌ Error encontrado en hash fragment:', {
+                error: hashError,
+                error_code: hashErrorCode,
+                error_description: hashErrorDesc
+            });
+            // Si hay error en hash fragment, establecerlo como error principal
+            error = hashError;
+            // Decodificar error_description si está codificado
+            try {
+                error_description = hashErrorDesc ? decodeURIComponent(hashErrorDesc.replace(/\+/g, ' ')) : (hashErrorCode || hashError);
+            } catch (e) {
+                error_description = hashErrorDesc || hashErrorCode || hashError;
+            }
+            log('❌ Error establecido:', { error, error_description });
+        }
+
+        // Detectar proveedor automáticamente
+        function detectProvider() {
+            if (type === 'recovery') return 'Recuperación de Contraseña';
+            if (window.location.href.includes('google')) return 'Google';
+            if (window.location.href.includes('apple')) return 'Apple';
+            return 'OAuth';
+        }
+
+        const detectedProvider = detectProvider();
+
+        // Mostrar información del proveedor
+        document.getElementById('providerInfo').innerHTML = `
+            <strong>Proveedor:</strong> ${detectedProvider}<br>
+            <strong>Estado:</strong> ${error ? 'Error' : 'Éxito'}${type ? `<br><strong>Tipo:</strong> ${type}` : ''}
+        `;
+
+        // Logs detallados
+        const logs = [];
+        function log(message, data = null) {
+            const timestamp = new Date().toISOString();
+            const logEntry = `[${timestamp}] ${message}`;
+            console.log(logEntry, data);
+            logs.push(logEntry + (data ? ` - ${JSON.stringify(data)}` : ''));
+
+            if (DEBUG_MODE) {
+                document.getElementById('debugInfo').innerHTML = logs.join('<br>');
+                document.getElementById('debugInfo').style.display = 'block';
+            }
+        }
+
+        // Log final después de todo el procesamiento
+        log('📱 Parámetros finales:', {
+            code: code ? 'presente' : 'ausente',
+            access_token: access_token ? 'presente (' + access_token.length + ' chars)' : 'ausente',
+            refresh_token: refresh_token ? 'presente (' + refresh_token.length + ' chars)' : 'ausente',
+            type: type || 'no especificado',
+            error,
+            error_description,
+            provider: detectedProvider,
+            hashFragment: window.location.hash ? 'presente (' + window.location.hash.length + ' chars)' : 'ausente',
+            hashParamsKeys: hashParamsKeys.length > 0 ? hashParamsKeys.join(', ') : 'ninguno',
+            hashParamsCount: hashParamsKeys.length
+        });
+
+        // Función para redirigir a la app
+        function redirectToApp() {
+            log('🚀 Intentando redirigir a la app...');
+
+            // Construir URL manualmente (URL constructor no funciona bien con custom schemes)
+            const params = [];
+            if (access_token) params.push(`access_token=${encodeURIComponent(access_token)}`);
+            if (refresh_token) params.push(`refresh_token=${encodeURIComponent(refresh_token)}`);
+            if (code) params.push(`code=${encodeURIComponent(code)}`);
+
+            // Establecer tipo: recovery si es recovery, sino oauth
+            if (type === 'recovery') {
+                params.push('type=recovery');
+                log('🔐 Tipo de callback: Recovery (restablecer contraseña)');
+            } else {
+                params.push('type=oauth');
+                if (provider) params.push(`provider=${encodeURIComponent(provider)}`);
+            }
+
+            const queryString = params.length > 0 ? '?' + params.join('&') : '';
+            const finalUrl = APP_URL + queryString;
+            log('📱 URL de la app:', finalUrl);
+
+            // Intentar abrir la app
+            window.location.href = finalUrl;
+
+            // Fallback: mostrar mensaje después de un tiempo
+            setTimeout(() => {
+                log('⏰ Mostrando mensaje de fallback');
+                const successMessage = type === 'recovery'
+                    ? 'Token de recuperación recibido. Vuelve a la aplicación para restablecer tu contraseña.'
+                    : 'Autenticación exitosa. Puedes cerrar esta ventana y volver a la aplicación.';
+
+                document.body.innerHTML = `
+                    <div class="container">
+                        <h1>✅ ${type === 'recovery' ? 'Token recibido' : 'Autenticación exitosa'}</h1>
+                        <p>${successMessage}</p>
+                        <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">
+                            Si la aplicación no se abrió automáticamente,
+                            vuelve a la app manualmente.
+                        </p>
+                        ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                    </div>
+                `;
+            }, TIMEOUT_MS);
+        }
+
+        // Si es recovery, mostrar formulario para cambiar contraseña
+        // Detectar recovery: tokens en hash fragment O type=recovery en query params
+        // IMPORTANTE: Solo es recovery si hay tokens válidos, no solo type=recovery
+        const isRecovery = (type === 'recovery' || hashParams.access_token) && access_token && refresh_token && !error;
+
+        // Debug: mostrar información completa
+        log('🔍 Estado completo:', {
+            url: window.location.href,
+            hash: window.location.hash ? window.location.hash.substring(0, 100) + '...' : 'vacío',
+            search: window.location.search,
+            type: type || 'no detectado',
+            hasAccessToken: !!access_token,
+            hasRefreshToken: !!refresh_token,
+            hashParamsKeys: Object.keys(hashParams),
+            isRecovery: isRecovery
+        });
+
+        if (isRecovery) {
+            log('🔐 Mostrando formulario de cambio de contraseña');
+            log('📋 Tokens detectados:', {
+                hasAccessToken: !!access_token,
+                hasRefreshToken: !!refresh_token,
+                type: type || 'detectado por hash fragment'
+            });
+            showPasswordResetForm();
+        } else if (error) {
+            // Manejar errores
+            log('❌ Error en autenticación:', { error, error_description });
+
+            // Mensajes específicos para errores comunes
+            let errorMessage = error_description || error;
+            let errorTitle = '❌ Error de autenticación';
+            let actionMessage = 'Vuelve a la aplicación e intenta de nuevo.';
+
+            if (error === 'access_denied' || error_description?.includes('expired') || error_description?.includes('invalid')) {
+                errorTitle = '⏰ Enlace Expirado';
+                errorMessage = 'El enlace de recuperación ha expirado o no es válido.';
+                actionMessage = 'Por favor, solicita un nuevo enlace de recuperación desde la aplicación. Los enlaces expiran después de 1 hora.';
+            }
+
+            document.body.innerHTML = `
+                <div class="container">
+                    <h1>${errorTitle}</h1>
+                    <p>${errorMessage}</p>
+                    <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">
+                        ${actionMessage}
+                    </p>
+                    ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                </div>
+            `;
+        } else {
+            // Si type=recovery pero no hay tokens, verificar si hay error primero
+            if (type === 'recovery' && !access_token && !refresh_token) {
+                // Si hay error en hash fragment, ya se mostró arriba, no hacer nada más
+                if (error) {
+                    return; // Ya se mostró el error arriba
+                }
+                log('⚠️ Type=recovery detectado pero tokens faltantes');
+                log('⏳ Esperando redirección de Supabase...');
+
+                // Mostrar mensaje de espera
+                document.body.innerHTML = `
+                    <div class="container">
+                        <div class="spinner"></div>
+                        <h1>Procesando autenticación</h1>
+                        <p>Conectando con la aplicación...</p>
+                        <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">
+                            Si esta página no se actualiza automáticamente, verifica que la URL contenga los tokens de acceso.
+                        </p>
+                        <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem; font-family: monospace; word-break: break-all;">
+                            URL actual: ${window.location.href.substring(0, 150)}...
+                        </p>
+                        ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                    </div>
+                `;
+
+                // Esperar un momento y verificar si llegaron los tokens (por si Supabase redirige después)
+                setTimeout(() => {
+                    const hashParamsAfter = parseHashFragment();
+                    if (hashParamsAfter.access_token && hashParamsAfter.refresh_token) {
+                        log('✅ Tokens recibidos después de espera');
+                        access_token = hashParamsAfter.access_token;
+                        refresh_token = hashParamsAfter.refresh_token;
+                        showPasswordResetForm();
+                    } else {
+                        log('❌ Tokens aún no recibidos después de espera');
+                        document.body.innerHTML = `
+                            <div class="container">
+                                <h1>⚠️ Parámetros faltantes</h1>
+                                <p>El enlace de recuperación no contiene los tokens necesarios.</p>
+                                <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">
+                                    Por favor, solicita un nuevo enlace de recuperación desde la aplicación.
+                                </p>
+                                <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem; font-family: monospace; word-break: break-all;">
+                                    URL: ${window.location.href}
+                                </p>
+                                <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem;">
+                                    Hash: ${window.location.hash || 'vacío'}
+                                </p>
+                                ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                            </div>
+                        `;
+                    }
+                }, 2000);
+            } else if (window.location.hash && !access_token && !refresh_token) {
+                log('⚠️ Hash fragment detectado pero tokens no encontrados');
+                document.body.innerHTML = `
+                    <div class="container">
+                        <h1>⚠️ Parámetros faltantes</h1>
+                        <p>El enlace de recuperación no contiene los tokens necesarios.</p>
+                        <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">
+                            Por favor, solicita un nuevo enlace de recuperación desde la aplicación.
+                        </p>
+                        <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem; font-family: monospace; word-break: break-all;">
+                            Hash: ${window.location.hash.substring(0, 100)}...
+                        </p>
+                        ${DEBUG_MODE ? `<div class="debug-info">${logs.join('<br>')}</div>` : ''}
+                    </div>
+                `;
+            } else {
+                // Ejecutar redirección inmediatamente para OAuth
+                redirectToApp();
+            }
+        }
+
+        // Función para mostrar formulario de cambio de contraseña
+        function showPasswordResetForm() {
+            document.body.innerHTML = `
+                <div class="container" style="max-width: 500px;">
+                    <h1>🔐 Restablecer Contraseña</h1>
+                    <p style="margin-bottom: 2rem;">Ingresa tu nueva contraseña</p>
+
+                    <form id="resetForm" style="text-align: left;">
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Nueva Contraseña</label>
+                            <input
+                                type="password"
+                                id="newPassword"
+                                required
+                                minlength="6"
+                                style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white; font-size: 1rem; box-sizing: border-box;"
+                                placeholder="Mínimo 6 caracteres"
+                            />
+                        </div>
+
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Confirmar Contraseña</label>
+                            <input
+                                type="password"
+                                id="confirmPassword"
+                                required
+                                minlength="6"
+                                style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white; font-size: 1rem; box-sizing: border-box;"
+                                placeholder="Repite la contraseña"
+                            />
+                        </div>
+
+                        <div id="errorMessage" style="color: #ff6b6b; margin-bottom: 1rem; display: none;"></div>
+                        <div id="successMessage" style="color: #51cf66; margin-bottom: 1rem; display: none;"></div>
+
+                        <button
+                            type="submit"
+                            id="submitBtn"
+                            style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none; background: white; color: #667eea; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;"
+                            onmouseover="this.style.opacity='0.9'"
+                            onmouseout="this.style.opacity='1'"
+                        >
+                            Cambiar Contraseña
+                        </button>
+                    </form>
+
+                    ${DEBUG_MODE ? `<div class="debug-info" style="margin-top: 2rem;">${logs.join('<br>')}</div>` : ''}
+                </div>
+            `;
+
+            // Cargar Supabase JS
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+            script.onload = () => {
+                initPasswordReset();
+            };
+            document.head.appendChild(script);
+        }
+
+        // Función para inicializar el reset de contraseña
+        function initPasswordReset() {
+            const supabaseUrl = 'https://lugraknhcjghtfzqgcwb.supabase.co';
+            const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3Jha25oY2pnaHRmenFnY3diIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDMyNjcwMjgsImV4cCI6MjA1ODg0MzAyOH0.wQELXR_uBdX0yYEqbdX6s2YUIQ8zI12u9vTqYbnpjiI';
+
+            const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+            // Establecer sesión con los tokens de recovery
+            supabaseClient.auth.setSession({
+                access_token: access_token,
+                refresh_token: refresh_token
+            }).then(({ error: sessionError }) => {
+                if (sessionError) {
+                    showError('El enlace de recuperación ha expirado o no es válido. Por favor, solicita un nuevo enlace.');
+                    return;
+                }
+
+                // Configurar el formulario
+                const form = document.getElementById('resetForm');
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+
+                    const newPassword = document.getElementById('newPassword').value;
+                    const confirmPassword = document.getElementById('confirmPassword').value;
+                    const submitBtn = document.getElementById('submitBtn');
+                    const errorDiv = document.getElementById('errorMessage');
+                    const successDiv = document.getElementById('successMessage');
+
+                    // Validar que las contraseñas coincidan
+                    if (newPassword !== confirmPassword) {
+                        showError('Las contraseñas no coinciden');
+                        return;
+                    }
+
+                    if (newPassword.length < 6) {
+                        showError('La contraseña debe tener al menos 6 caracteres');
+                        return;
+                    }
+
+                    // Deshabilitar botón y mostrar loading
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Cambiando contraseña...';
+                    hideError();
+                    hideSuccess();
+
+                    try {
+                        // Cambiar la contraseña
+                        const { error: updateError } = await supabaseClient.auth.updateUser({
+                            password: newPassword
+                        });
+
+                        if (updateError) {
+                            throw updateError;
+                        }
+
+                        // Éxito
+                        showSuccess('✅ Contraseña cambiada exitosamente. Redirigiendo a la aplicación...');
+
+                        // Redirigir a la app después de 2 segundos
+                        setTimeout(() => {
+                            redirectToApp();
+                        }, 2000);
+
+                    } catch (error) {
+                        showError(error.message || 'Error al cambiar la contraseña. Por favor, intenta de nuevo.');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Cambiar Contraseña';
+                    }
+                });
+            }).catch((error) => {
+                showError('Error al procesar el enlace de recuperación: ' + error.message);
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        function hideSuccess() {
+            document.getElementById('successMessage').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
