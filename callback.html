@@ -513,6 +513,7 @@
                 debugEl = document.createElement('div');
                 debugEl.id = 'debugInfo';
                 debugEl.className = 'debug-info';
+                debugEl.style.cssText = 'display: block !important; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 1rem; margin-top: 1rem; border-radius: 8px; font-size: 0.7rem; max-height: 500px; overflow-y: auto; border: 3px solid #00ff00; font-family: monospace;';
                 const container = document.querySelector('.container');
                 if (container) {
                     container.appendChild(debugEl);
@@ -529,32 +530,45 @@
             }
 
             if (debugEl) {
-                // Re-parsear hash por si cambió
-                const currentHashParams = parseHashFragment();
-                const currentAccessToken = currentHashParams.access_token || access_token;
-                const currentRefreshToken = currentHashParams.refresh_token || refresh_token;
-                const currentType = currentHashParams.type || type;
+                try {
+                    // Re-parsear hash por si cambió
+                    const currentHashParams = typeof parseHashFragment === 'function' ? parseHashFragment() : {};
+                    const currentAccessToken = currentHashParams.access_token || (typeof access_token !== 'undefined' ? access_token : null);
+                    const currentRefreshToken = currentHashParams.refresh_token || (typeof refresh_token !== 'undefined' ? refresh_token : null);
+                    const currentType = currentHashParams.type || (typeof type !== 'undefined' ? type : null);
+                    const currentIsRecovery = typeof isRecovery !== 'undefined' ? isRecovery : false;
+                    const currentError = typeof error !== 'undefined' ? error : null;
+                    const currentLogs = typeof logs !== 'undefined' && Array.isArray(logs) ? logs : [];
 
-                debugEl.innerHTML = `
-                    <strong>🔍 Debug Info (Actualizado: ${new Date().toLocaleTimeString()}):</strong><br>
-                    <strong>URL completa:</strong> ${window.location.href.substring(0, 200)}${window.location.href.length > 200 ? '...' : ''}<br>
-                    <strong>Hash:</strong> ${window.location.hash ? window.location.hash.substring(0, 150) + '...' : 'vacío'}<br>
-                    <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
-                    <strong>Host:</strong> ${window.location.host}<br>
-                    <strong>Pathname:</strong> ${window.location.pathname}<br>
-                    <hr>
-                    <strong>Type:</strong> ${currentType || 'no detectado'}<br>
-                    <strong>Access Token:</strong> ${currentAccessToken ? '✅ presente (' + currentAccessToken.length + ' chars)' : '❌ ausente'}<br>
-                    <strong>Refresh Token:</strong> ${currentRefreshToken ? '✅ presente (' + currentRefreshToken.length + ' chars)' : '❌ ausente'}<br>
-                    <strong>Hash Params Keys:</strong> ${Object.keys(currentHashParams).join(', ') || 'ninguno'}<br>
-                    <strong>Is Recovery:</strong> ${isRecovery ? '✅ SÍ' : '❌ NO'}<br>
-                    <strong>Error:</strong> ${error || 'ninguno'}<br>
-                    <hr>
-                    <strong>Logs (${logs.length} entradas):</strong><br>
-                    ${logs.slice(-10).join('<br>')}
-                    ${logs.length > 10 ? '<br>... (mostrando últimos 10)' : ''}
-                `;
-                debugEl.style.display = 'block';
+                    debugEl.innerHTML = `
+                        <strong style="color: yellow;">🔍 Debug Info (Actualizado: ${new Date().toLocaleTimeString()}):</strong><br>
+                        <strong>URL completa:</strong> ${window.location.href.substring(0, 200)}${window.location.href.length > 200 ? '...' : ''}<br>
+                        <strong>Hash:</strong> ${window.location.hash ? window.location.hash.substring(0, 150) + (window.location.hash.length > 150 ? '...' : '') : 'vacío'}<br>
+                        <strong>Search:</strong> ${window.location.search || 'vacío'}<br>
+                        <strong>Host:</strong> ${window.location.host}<br>
+                        <strong>Pathname:</strong> ${window.location.pathname}<br>
+                        <hr>
+                        <strong>Type:</strong> ${currentType || 'no detectado'}<br>
+                        <strong>Access Token:</strong> ${currentAccessToken ? '✅ presente (' + currentAccessToken.length + ' chars)' : '❌ ausente'}<br>
+                        <strong>Refresh Token:</strong> ${currentRefreshToken ? '✅ presente (' + currentRefreshToken.length + ' chars)' : '❌ ausente'}<br>
+                        <strong>Hash Params Keys:</strong> ${Object.keys(currentHashParams).join(', ') || 'ninguno'}<br>
+                        <strong>Is Recovery:</strong> ${currentIsRecovery ? '✅ SÍ' : '❌ NO'}<br>
+                        <strong>Error:</strong> ${currentError || 'ninguno'}<br>
+                        <hr>
+                        <strong>Logs (${currentLogs.length} entradas):</strong><br>
+                        ${currentLogs.length > 0 ? currentLogs.slice(-10).join('<br>') : 'No hay logs aún'}
+                        ${currentLogs.length > 10 ? '<br>... (mostrando últimos 10)' : ''}
+                    `;
+                    debugEl.style.display = 'block';
+                } catch (e) {
+                    debugEl.innerHTML = `
+                        <strong style="color: red;">❌ Error al mostrar debug:</strong><br>
+                        ${e.message}<br>
+                        <strong>URL:</strong> ${window.location.href}<br>
+                        <strong>Hash:</strong> ${window.location.hash || 'vacío'}<br>
+                        <strong>Stack:</strong> ${e.stack || 'N/A'}
+                    `;
+                }
             }
         }
 
