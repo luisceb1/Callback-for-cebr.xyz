@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,6 +17,7 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
+
         .container {
             text-align: center;
             padding: 2rem;
@@ -26,6 +28,7 @@
             max-width: 400px;
             width: 90%;
         }
+
         .spinner {
             width: 40px;
             height: 40px;
@@ -35,18 +38,27 @@
             animation: spin 1s linear infinite;
             margin: 0 auto 1rem;
         }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
+
         h1 {
             margin: 0 0 1rem 0;
             font-size: 1.5rem;
         }
+
         p {
             margin: 0;
             opacity: 0.9;
         }
+
         .provider-info {
             margin-top: 1rem;
             padding: 0.5rem;
@@ -54,6 +66,7 @@
             border-radius: 8px;
             font-size: 0.9rem;
         }
+
         .debug-info {
             margin-top: 1rem;
             padding: 1rem;
@@ -67,6 +80,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="spinner"></div>
@@ -81,7 +95,7 @@
         console.log('📍 URL actual:', window.location.href);
 
         // Configuración
-        const DEBUG_MODE = new URLSearchParams(window.location.search).get('debug') === 'true';
+        const DEBUG_MODE = true; // Siempre activo para debug temporal
         const TIMEOUT_MS = 15000; // 15 segundos
         const APP_URL = 'calculadorapenas://auth/callback';
 
@@ -287,6 +301,12 @@
             isRecovery: isRecovery
         });
 
+        // Mostrar debug info inmediatamente si está activo
+        if (DEBUG_MODE) {
+            document.getElementById('debugInfo').innerHTML = logs.join('<br>');
+            document.getElementById('debugInfo').style.display = 'block';
+        }
+
         if (isRecovery) {
             log('🔐 Mostrando formulario de cambio de contraseña');
             log('📋 Tokens detectados:', {
@@ -390,9 +410,51 @@
                     </div>
                 `;
             } else {
-                // Ejecutar redirección inmediatamente para OAuth
-                redirectToApp();
+                // Si no es recovery ni error, pero hay hash fragment, esperar un momento
+                // porque Supabase puede estar redirigiendo
+                if (window.location.hash && window.location.hash.length > 10) {
+                    log('⏳ Hash fragment detectado, esperando procesamiento...');
+                    setTimeout(() => {
+                        const hashParamsAfter = parseHashFragment();
+                        if (hashParamsAfter.access_token && hashParamsAfter.refresh_token) {
+                            log('✅ Tokens recibidos después de espera');
+                            access_token = hashParamsAfter.access_token;
+                            refresh_token = hashParamsAfter.refresh_token;
+                            type = hashParamsAfter.type || 'recovery';
+                            showPasswordResetForm();
+                        } else {
+                            // Mostrar debug info y redirigir
+                            log('⚠️ No se detectó recovery, redirigiendo a app');
+                            showDebugInfo();
+                            redirectToApp();
+                        }
+                    }, 1000);
+                } else {
+                    // Ejecutar redirección inmediatamente para OAuth
+                    redirectToApp();
+                }
             }
+        }
+
+        // Función para mostrar información de debug
+        function showDebugInfo() {
+            const debugDiv = document.createElement('div');
+            debugDiv.className = 'debug-info';
+            debugDiv.style.display = 'block';
+            debugDiv.style.marginTop = '1rem';
+            debugDiv.innerHTML = `
+                <strong>Debug Info:</strong><br>
+                URL: ${window.location.href.substring(0, 200)}...<br>
+                Hash: ${window.location.hash || 'vacío'}<br>
+                Search: ${window.location.search || 'vacío'}<br>
+                Type: ${type || 'no detectado'}<br>
+                Access Token: ${access_token ? 'presente (' + access_token.length + ' chars)' : 'ausente'}<br>
+                Refresh Token: ${refresh_token ? 'presente (' + refresh_token.length + ' chars)' : 'ausente'}<br>
+                Hash Params: ${Object.keys(hashParams).join(', ') || 'ninguno'}<br>
+                Is Recovery: ${isRecovery}<br>
+                ${logs.join('<br>')}
+            `;
+            document.querySelector('.container').appendChild(debugDiv);
         }
 
         // Función para mostrar formulario de cambio de contraseña
@@ -551,4 +613,5 @@
         }
     </script>
 </body>
+
 </html>
